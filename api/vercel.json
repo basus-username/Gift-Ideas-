@@ -1,7 +1,0 @@
-{
-  "functions": {
-    "api/gift-ideas.js": {
-      "maxDuration": 60
-    }
-  }
-}
