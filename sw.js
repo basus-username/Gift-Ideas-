@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gift-tags-v1';
+const CACHE_NAME = 'gift-tags-v2';
 const ASSETS = ['/', '/index.html', '/manifest.json'];
 
 self.addEventListener('install', (event) => {
@@ -21,18 +21,15 @@ self.addEventListener('fetch', (event) => {
   // Never cache API calls to the serverless function
   if (event.request.url.includes('/api/')) return;
 
+  // Network-first: always try to fetch the latest version.
+  // Only fall back to the cached copy if the network genuinely fails (offline).
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      return (
-        cached ||
-        fetch(event.request)
-          .then((response) => {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-            return response;
-          })
-          .catch(() => cached)
-      );
-    })
+    fetch(event.request)
+      .then((response) => {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
