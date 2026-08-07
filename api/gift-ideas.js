@@ -1,10 +1,20 @@
 // Vercel serverless function (Node.js runtime): calls Gemini API for gift ideas.
 // Requires env var GEMINI_API_KEY set in Vercel project settings.
 //
-// Design notes (see docs/MASTER-PROMPT.md PART B lessons):
+// Design notes (see docs/MASTER-PROMPT.md PART B lessons + v2 update):
 // - Tries a short ordered list of models, each with its own timeout, falling
 //   through to the next on failure — model names and free-tier availability
-//   both drift over time.
+//   both drift over time. As of Aug 2026, gemini-2.5-flash-lite returns
+//   "no longer available to new users" for freshly-created API keys/projects
+//   (older keys can still use it) — so the primary model is now a Gemini 3.x
+//   Flash-Lite model, which every project can access, with 2.5 Flash kept as
+//   a fallback since it's still live for everyone through Oct 2026.
+// - Gemini 3.x models use generationConfig.thinkingConfig.thinkingLevel
+//   (a string: "low"/"high" for Flash-Lite models — "minimal" is rejected by
+//   gemini-3.1-flash-lite specifically). Gemini 2.5 models use the older
+//   generationConfig.thinkingConfig.thinkingBudget (an integer, 0 = off).
+//   Mixing the two up on the wrong model generation fails silently/loudly
+//   depending on the model, so each model below carries its own config.
 // - Free-tier Gemini quota is tied to the Google Cloud project behind the
 //   key, not the key itself. If you've been testing another app (e.g. the
 //   bill splitter) with a key from the same project, this app's requests
@@ -16,13 +26,26 @@ export const config = {
   maxDuration: 60,
 };
 
-const MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+const MODELS = [
+  { id: 'gemini-3.1-flash-lite', thinking: { thinkingLevel: 'low' } },
+  { id: 'gemini-2.5-flash', thinking: { thinkingBudget: 0 } },
+  { id: 'gemini-flash-latest', thinking: null }, // auto-updating alias, last resort — omit
+                                                  // thinkingConfig since we can't know which
+                                                  // generation it currently points to
+];
 const PER_ATTEMPT_TIMEOUT_MS = 15000;
 
-async function tryModel(model, apiKey, prompt) {
+async function tryModel(modelSpec, apiKey, prompt) {
+  const { id: model, thinking } = modelSpec;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), PER_ATTEMPT_TIMEOUT_MS);
   try {
+    const generationConfig = {
+      temperature: 0.9,
+      maxOutputTokens: 2048,
+    };
+    if (thinking) generationConfig.thinkingConfig = thinking;
+
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
       {
@@ -31,11 +54,7 @@ async function tryModel(model, apiKey, prompt) {
         signal: controller.signal,
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.9,
-            maxOutputTokens: 1024,
-            thinkingConfig: { thinkingBudget: 0 },
-          },
+          generationConfig,
         }),
       }
     );
