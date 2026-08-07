@@ -58,7 +58,7 @@ Respond ONLY with valid JSON, no markdown fences, no preamble, in this exact sha
           generationConfig: {
             temperature: 0.9,
             maxOutputTokens: 1024,
-            thinkingConfig: { thinkingLevel: 'MINIMAL' },
+            thinkingConfig: { thinkingBudget: 0 },
           },
         }),
       }
